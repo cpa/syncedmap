@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply min-h-screen bg-slate-950 text-slate-100 antialiased;
+  }
+}
+
+@layer components {
+  .map-panel {
+    @apply relative min-h-[380px] overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl;
+  }
+
+  .map-surface {
+    @apply absolute inset-0 z-0;
+  }
+
+  .map-canvas {
+    @apply relative h-full w-full;
+  }
+
+  .map-controls {
+    @apply pointer-events-none absolute bottom-4 left-4 right-4 z-20 flex flex-wrap items-center gap-3;
+  }
+
+  .control-card {
+    @apply pointer-events-auto flex flex-wrap items-center gap-2 rounded-full bg-slate-900/85 px-4 py-2 text-sm font-medium text-slate-100 shadow-lg backdrop-blur transition-colors;
+  }
+
+  .control-button {
+    @apply pointer-events-auto rounded-full bg-indigo-500/90 px-4 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur transition hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300;
+  }
+
+  .bearing-slider {
+    @apply pointer-events-auto h-1 w-full flex-1 appearance-none rounded-full bg-slate-700 accent-indigo-400;
+  }
+
+  .map-label {
+    @apply pointer-events-auto inline-flex items-center gap-2 rounded-full bg-slate-900/80 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-300 shadow;
+  }
+}
+
+.maplibregl-map,
+.maplibregl-ctrl {
+  font: inherit;
+}
+
+.maplibregl-ctrl-group > button {
+  border-radius: 9999px;
+}
+
+.bearing-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 1rem;
+  width: 1rem;
+  border-radius: 9999px;
+  background-color: rgb(129 140 248);
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.75);
+  cursor: pointer;
+}
+
+.bearing-slider::-moz-range-thumb {
+  height: 1rem;
+  width: 1rem;
+  border-radius: 9999px;
+  border: none;
+  background-color: rgb(129 140 248);
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.75);
+  cursor: pointer;
+}
