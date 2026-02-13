@@ -2,25 +2,8 @@ import './style.css'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-const MAP_STYLE = {
-  version: 8,
-  sources: {
-    osm: {
-      type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      maxzoom: 19,
-      attribution: '© OpenStreetMap contributors',
-    },
-  },
-  layers: [
-    {
-      id: 'osm',
-      type: 'raster',
-      source: 'osm',
-    },
-  ],
-}
+const MAP_STYLE =
+  'https://data.geopf.fr/annexes/ressources/vectorTiles/styles/PLAN.IGN/standard.json'
 
 const MAP_CONFIGS = {
   left: {
@@ -52,10 +35,6 @@ const APP_TEMPLATE = `
           <div class="map-surface">
             <div id="map-left" class="map-canvas"></div>
           </div>
-          <div class="absolute top-4 left-4 right-4 z-20 flex justify-between">
-            <span class="map-label">Gauche · Vue principale</span>
-            <span class="map-label hidden sm:inline-flex">Échelle liée</span>
-          </div>
           <div class="map-controls">
             <label class="control-card" for="lock-left">
               <input
@@ -73,10 +52,6 @@ const APP_TEMPLATE = `
         <section class="map-panel" data-map="right">
           <div class="map-surface">
             <div id="map-right" class="map-canvas"></div>
-          </div>
-          <div class="absolute top-4 left-4 right-4 z-20 flex justify-between">
-            <span class="map-label">Droite · Vue complémentaire</span>
-            <span class="map-label hidden sm:inline-flex">Échelle liée</span>
           </div>
           <div class="map-controls">
             <label class="control-card" for="lock-right">
@@ -121,7 +96,7 @@ const APP_TEMPLATE = `
 const INITIAL_ZOOM = 15
 const ZOOM_EPSILON = 1e-6
 const EARTH_RADIUS_METERS = 6378137
-const RING_RADII_METERS = [100, 200, 300, 400, 500, 800, 1000]
+const RING_RADII_METERS = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000]
 const CIRCLE_SEGMENTS = 120
 
 const mapStates = {}
@@ -171,11 +146,26 @@ function createCircleFeature(center, radiusMeters, segments = CIRCLE_SEGMENTS) {
   coordinates.push(coordinates[0])
 
   return {
+    id: radiusMeters,
     type: 'Feature',
     properties: { radius: radiusMeters },
     geometry: {
       type: 'Polygon',
       coordinates: [coordinates],
+    },
+  }
+}
+
+function createRingLabelFeature(center, radiusMeters, index) {
+  return {
+    type: 'Feature',
+    properties: {
+      radius: radiusMeters,
+      showLabel: index % 2 === 0,
+    },
+    geometry: {
+      type: 'Point',
+      coordinates: destinationPoint(center, 0, radiusMeters),
     },
   }
 }
@@ -187,15 +177,107 @@ function buildRingCollection(center) {
   }
 }
 
+function buildRingLabelCollection(center) {
+  return {
+    type: 'FeatureCollection',
+    features: RING_RADII_METERS.map((radius, index) =>
+      createRingLabelFeature(center, radius, index),
+    ),
+  }
+}
+
+function createRingDistanceLabelElement(radiusMeters) {
+  const el = document.createElement('div')
+  el.className = 'ring-distance-label'
+  el.textContent = `${radiusMeters} m`
+  return el
+}
+
+function setActiveRingLabel(key, radiusMeters, isActive) {
+  const state = mapStates[key]
+  if (!state?.ringDistanceMarkers) return
+
+  const index = RING_RADII_METERS.indexOf(radiusMeters)
+  const marker = state.ringDistanceMarkers[index]
+  if (!marker) return
+
+  const element = marker.getElement()
+  if (!element) return
+
+  element.classList.toggle('ring-distance-label--active', isActive)
+}
+
+function syncRingHighlight(radiusMeters) {
+  const nextRadius = Number(radiusMeters)
+  const hasRadius = Number.isFinite(nextRadius)
+
+  Object.keys(mapStates).forEach((key) => {
+    const state = mapStates[key]
+    if (!state?.map) return
+    if (!state.map.getSource(state.ringSourceId)) return
+
+    if (typeof state.hoveredRadius === 'number') {
+      state.map.setFeatureState(
+        { source: state.ringSourceId, id: state.hoveredRadius },
+        { highlighted: false },
+      )
+      setActiveRingLabel(key, state.hoveredRadius, false)
+    }
+
+    if (!hasRadius) {
+      state.hoveredRadius = null
+      return
+    }
+
+    state.map.setFeatureState(
+      { source: state.ringSourceId, id: nextRadius },
+      { highlighted: true },
+    )
+    setActiveRingLabel(key, nextRadius, true)
+    state.hoveredRadius = nextRadius
+  })
+}
+
+function updateRingDistanceMarkers(key, center) {
+  const state = mapStates[key]
+  if (!state || !state.map) return
+
+  if (!state.ringDistanceMarkers) {
+    state.ringDistanceMarkers = []
+  }
+
+  RING_RADII_METERS.forEach((radius, index) => {
+    if (index % 2 === 1) return
+
+    const point = destinationPoint(center, 0, radius)
+
+    if (!state.ringDistanceMarkers[index]) {
+      const marker = new maplibregl.Marker({
+        element: createRingDistanceLabelElement(radius),
+        anchor: 'left',
+      })
+
+      state.ringDistanceMarkers[index] = marker
+      marker.setLngLat(point).addTo(state.map)
+      return
+    }
+
+    state.ringDistanceMarkers[index].setLngLat(point)
+  })
+}
+
 function updateRingOverlays(key) {
   const state = mapStates[key]
   if (!state?.ringSourceId) return
 
   const source = state.map.getSource(state.ringSourceId)
-  if (!source) return
+  const labelsSource = state.map.getSource(state.ringLabelSourceId)
+  if (!source || !labelsSource) return
 
   const center = state.map.getCenter()
   source.setData(buildRingCollection([center.lng, center.lat]))
+  labelsSource.setData(buildRingLabelCollection([center.lng, center.lat]))
+  updateRingDistanceMarkers(key, [center.lng, center.lat])
 }
 
 function destroyExistingMaps() {
@@ -324,6 +406,7 @@ function setupMap(key) {
   const bearingDisplay = document.querySelector(`[data-role="bearing-display"][data-map="${key}"]`)
   const resetBearingButton = document.querySelector(`[data-role="reset-bearing"][data-map="${key}"]`)
   const ringSourceId = `${key}-rings`
+  const ringLabelSourceId = `${key}-rings-labels`
 
   mapStates[key] = {
     map,
@@ -333,6 +416,9 @@ function setupMap(key) {
     bearingDisplay,
     resetBearingButton,
     ringSourceId,
+    ringLabelSourceId,
+    ringDistanceMarkers: [],
+    hoveredRadius: null,
     isLocked: false,
     lockedCenter: [...config.initialCenter],
     initialCenter: [...config.initialCenter],
@@ -372,16 +458,55 @@ function setupMap(key) {
       data: buildRingCollection(config.initialCenter),
     })
 
+    map.addSource(ringLabelSourceId, {
+      type: 'geojson',
+      data: buildRingLabelCollection(config.initialCenter),
+    })
+
     map.addLayer({
-      id: `${key}-rings-outline`,
+    id: `${key}-rings-outline`,
       type: 'line',
       source: ringSourceId,
       paint: {
         'line-color': '#6366f1',
-        'line-width': 2,
-        'line-opacity': 0.8,
-        'line-dasharray': [2, 2],
+        'line-width': [
+          'case',
+          ['boolean', ['feature-state', 'highlighted'], false],
+          4,
+          2,
+        ],
+        'line-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'highlighted'], false],
+          1,
+          0.55,
+        ],
+        'line-dasharray': [
+          'case',
+          ['boolean', ['feature-state', 'highlighted'], false],
+          ['literal', []],
+          ['literal', [2, 2]],
+        ],
       },
+    })
+
+    map.on('mouseenter', `${key}-rings-outline`, () => {
+      map.getCanvas().style.cursor = 'pointer'
+    })
+
+    map.on('mousemove', `${key}-rings-outline`, (event) => {
+      const feature = event.features?.[0]
+      const radius = Number(feature?.properties?.radius)
+      if (!Number.isFinite(radius)) {
+        syncRingHighlight(null)
+        return
+      }
+      syncRingHighlight(radius)
+    })
+
+    map.on('mouseleave', `${key}-rings-outline`, () => {
+      map.getCanvas().style.cursor = ''
+      syncRingHighlight(null)
     })
 
     updateRingOverlays(key)
@@ -404,6 +529,9 @@ function setupMap(key) {
   runInitialSizing()
 
   mapStates[key].cleanup = () => {
+    mapStates[key].ringDistanceMarkers.forEach((marker) => {
+      marker.remove()
+    })
     if (observer) observer.disconnect()
     window.removeEventListener('resize', refreshSize)
     map.remove()
